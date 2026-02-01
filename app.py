@@ -2,6 +2,7 @@ import streamlit as st
 import numpy as np
 from ultralytics import YOLO
 from PIL import Image, ImageDraw
+import pandas as pd
 
 # =========================================================
 # STREAMLIT PAGE CONFIG
@@ -41,11 +42,11 @@ if not st.session_state.logged_in:
         if USERS.get(username) == password:
             st.session_state.logged_in = True
             st.session_state.user = username
-            st.rerun()   # ✅ FIXED
+            st.rerun()
         else:
             st.error("❌ Invalid username or password")
 
-    st.stop()  # stop execution until login
+    st.stop()
 
 # =========================================================
 # SIDEBAR
@@ -63,7 +64,7 @@ confidence = st.sidebar.slider(
 
 if st.sidebar.button("Logout"):
     st.session_state.clear()
-    st.rerun()   # ✅ FIXED
+    st.rerun()
 
 # =========================================================
 # LOAD YOLO MODEL (CACHED)
@@ -100,18 +101,21 @@ if uploaded_file is not None:
 
     with col2:
         st.subheader("Detection Result")
+
         with st.spinner("Running YOLO inference..."):
             results = model(img_np, conf=confidence)[0]
 
             draw = ImageDraw.Draw(image)
 
+            chart_data = []
+
             for box in results.boxes:
                 x1, y1, x2, y2 = map(float, box.xyxy[0])
-                conf = float(box.conf[0])
+                conf_score = float(box.conf[0])
                 cls = int(box.cls[0])
                 label = model.names[cls]
 
-                text = f"{label} {conf:.2f}"
+                text = f"{label} {conf_score:.2f}"
 
                 draw.rectangle(
                     [x1, y1, x2, y2],
@@ -125,7 +129,33 @@ if uploaded_file is not None:
                     fill="yellow"
                 )
 
+                # collect data for bar chart
+                chart_data.append({
+                    "Class": label,
+                    "Confidence": conf_score
+                })
+
             st.image(image, use_column_width=True)
+
+    # =====================================================
+    # CONFIDENCE BAR CHART
+    # =====================================================
+    if chart_data:
+        st.subheader("📊 Detection Confidence per Class")
+
+        df_chart = pd.DataFrame(chart_data)
+
+        # group by class (max confidence per class)
+        df_chart = df_chart.groupby("Class", as_index=False)["Confidence"].max()
+
+        st.bar_chart(
+            data=df_chart,
+            x="Class",
+            y="Confidence",
+            use_container_width=True
+        )
+    else:
+        st.info("No objects detected with the selected confidence threshold.")
 
 # =========================================================
 # FOOTER
