@@ -2,6 +2,8 @@ import streamlit as st
 import numpy as np
 from ultralytics import YOLO
 from PIL import Image, ImageDraw
+import pandas as pd
+import altair as alt
 
 # =========================================================
 # STREAMLIT PAGE CONFIG
@@ -41,11 +43,11 @@ if not st.session_state.logged_in:
         if USERS.get(username) == password:
             st.session_state.logged_in = True
             st.session_state.user = username
-            st.rerun()   # ✅ FIXED
+            st.rerun()
         else:
             st.error("❌ Invalid username or password")
 
-    st.stop()  # stop execution until login
+    st.stop()
 
 # =========================================================
 # SIDEBAR
@@ -63,7 +65,7 @@ confidence = st.sidebar.slider(
 
 if st.sidebar.button("Logout"):
     st.session_state.clear()
-    st.rerun()   # ✅ FIXED
+    st.rerun()
 
 # =========================================================
 # LOAD YOLO MODEL (CACHED)
@@ -94,6 +96,8 @@ if uploaded_file is not None:
 
     col1, col2 = st.columns(2)
 
+    confidence_records = []
+
     with col1:
         st.subheader("Original Image")
         st.image(image, use_column_width=True)
@@ -107,11 +111,11 @@ if uploaded_file is not None:
 
             for box in results.boxes:
                 x1, y1, x2, y2 = map(float, box.xyxy[0])
-                conf = float(box.conf[0])
+                conf_score = float(box.conf[0])
                 cls = int(box.cls[0])
                 label = model.names[cls]
 
-                text = f"{label} {conf:.2f}"
+                text = f"{label} {conf_score:.2f}"
 
                 draw.rectangle(
                     [x1, y1, x2, y2],
@@ -125,7 +129,40 @@ if uploaded_file is not None:
                     fill="yellow"
                 )
 
+                # save for histogram
+                confidence_records.append({
+                    "Class": label,
+                    "Confidence": conf_score
+                })
+
             st.image(image, use_column_width=True)
+
+    # =====================================================
+    # CONFIDENCE HISTOGRAM
+    # =====================================================
+    if confidence_records:
+        st.subheader("📊 Confidence Distribution of Class Predictions")
+
+        df_conf = pd.DataFrame(confidence_records)
+
+        hist = (
+            alt.Chart(df_conf)
+            .mark_bar(opacity=0.7)
+            .encode(
+                x=alt.X("Confidence:Q", bin=alt.Bin(maxbins=10), title="Confidence"),
+                y=alt.Y("count()", title="Number of Detections"),
+                color=alt.Color("Class:N", legend=alt.Legend(title="Class")),
+                tooltip=["Class", "count()"]
+            )
+            .properties(
+                width="container",
+                height=350
+            )
+        )
+
+        st.altair_chart(hist, use_container_width=True)
+    else:
+        st.info("No detections found to plot confidence histogram.")
 
 # =========================================================
 # FOOTER
